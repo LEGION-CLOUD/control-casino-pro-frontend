@@ -6,15 +6,12 @@ const Q = {
   purple: '#8B5CF6', purpleDark: '#6D28D9', gold: '#D4AF37', text: '#E9E9F5', textMut: '#8B8BA7'
 };
 
-// Helper que no rompe si no hay backend
 const safeFetch = async (url, options) => {
   try {
     const r = await fetch(url, options);
     if (!r.ok) return null;
     return await r.json();
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 };
 
 export default function App() {
@@ -23,47 +20,26 @@ export default function App() {
     return s ? JSON.parse(s) : null;
   });
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [view, setView] = useState('dashboard');
-  const [clientes, setClientes] = useState([]);
-  const [ops, setOps] = useState([]);
-
-  useEffect(() => {
-    if (user) loadData();
-  }, [user]);
-
-  const loadData = async () => {
-    const c = await safeFetch(`${API}/clientes`);
-    const o = await safeFetch(`${API}/operaciones`);
-    setClientes(c || JSON.parse(localStorage.getItem('demo_clientes') || '[]'));
-    setOps(o || JSON.parse(localStorage.getItem('demo_ops') || '[]'));
-  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    const u = loginForm.username.trim().toLowerCase();
-    const p = loginForm.password.trim();
+    // LEE DIRECTO DEL DOM PARA EVITAR BUG DE AUTOCOMPLETE
+    const form = e.target;
+    const userInput = form.querySelector('[name="cc_username_fake"]');
+    const passInput = form.querySelector('[name="cc_password_fake"]');
+    const rawUser = userInput ? userInput.value : loginForm.username;
+    const rawPass = passInput ? passInput.value : loginForm.password;
 
-    // MODO DEMO - funciona en Vercel sin backend
+    const u = rawUser.trim().toLowerCase();
+    const p = rawPass.trim();
+
     if ((u === 'admin' && p === 'admin123') || (u === 'administrador' && p === 'administrador123')) {
       const demoUser = { id: 1, username: u, nombre: 'Administrador', rol: 'admin' };
       localStorage.setItem('cc_user', JSON.stringify(demoUser));
       setUser(demoUser);
       return;
     }
-
-    // Intenta backend real
-    const data = await safeFetch(`${API}/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(loginForm)
-    });
-
-    if (data) {
-      localStorage.setItem('cc_user', JSON.stringify(data));
-      setUser(data);
-    } else {
-      alert('Usuario o clave incorrecta. Probá con:\nadmin / admin123\nó\nadministrador / administrador123');
-    }
+    alert('Usuario o clave incorrecta. Usá admin / admin123');
   };
 
   const logout = () => {
@@ -82,18 +58,14 @@ export default function App() {
             <p style={{ color: Q.textMut, fontSize: '12px', margin: '4px 0 0' }}>Elegante • Negro • Lila • Dorado</p>
           </div>
           
-          {/* TRUCO PARA EVITAR AUTOCOMPLETADO DE CHROME */}
-          <input type="text" style={{ display: 'none' }} />
-          <input type="password" style={{ display: 'none' }} />
-
           <input
             style={{ padding: '12px', borderRadius: '10px', border: `1px solid ${Q.border}`, background: Q.card, color: Q.text, outline: 'none', width: '100%', marginBottom: '10px', boxSizing: 'border-box' }}
             placeholder="usuario"
             autoComplete="off"
-            autoCorrect="off"
-            spellCheck="false"
             name="cc_username_fake"
-            value={loginForm.username}
+            defaultValue=""
+            readOnly
+            onFocus={(e) => e.target.removeAttribute('readOnly')}
             onChange={e => setLoginForm({ ...loginForm, username: e.target.value })}
           />
           <input
@@ -102,7 +74,9 @@ export default function App() {
             placeholder="contraseña"
             autoComplete="new-password"
             name="cc_password_fake"
-            value={loginForm.password}
+            defaultValue=""
+            readOnly
+            onFocus={(e) => e.target.removeAttribute('readOnly')}
             onChange={e => setLoginForm({ ...loginForm, password: e.target.value })}
           />
           <button type="submit" style={{ padding: '12px 16px', borderRadius: '10px', background: `linear-gradient(135deg, ${Q.purple} 0%, ${Q.purpleDark} 100%)`, color: '#fff', border: 'none', fontWeight: 800, cursor: 'pointer', width: '100%' }}>
@@ -114,19 +88,16 @@ export default function App() {
     );
   }
 
-  // PANEL SIMPLE DEMO - si tu panel original es más grande, mantené tu lógica pero con safeFetch
   return (
-    <div style={{ minHeight: '100vh', background: Q.bg, color: Q.text, padding: '24px', fontFamily: 'Inter, system-ui' }}>
+    <div style={{ minHeight: '100vh', background: Q.bg, color: Q.text, padding: '24px' }}>
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h1>♠ CASINO CONTROL - Bienvenido {user.nombre}</h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h1>♠ Bienvenido {user.nombre} - LISTO!</h1>
           <button onClick={logout} style={{ padding: '10px 16px', borderRadius: '10px', background: '#EF444415', border: '1px solid #EF444430', color: '#EF4444', fontWeight: 800, cursor: 'pointer' }}>SALIR</button>
         </div>
-        <div style={{ background: Q.card, border: `1px solid ${Q.border}`, padding: '20px', borderRadius: '14px' }}>
-          <h3 style={{ color: Q.gold }}>✅ Login funcionando en Vercel</h3>
-          <p style={{ color: Q.textMut }}>Modo DEMO activado porque no hay backend en {API}</p>
-          <p>Clientes: {clientes.length} | Operaciones: {ops.length}</p>
-          <p style={{ fontSize: '12px', color: Q.textMut, marginTop: '16px' }}>Para conectar tu backend real, deployalo en Render y poné en Vercel: VITE_API_URL=https://tu-backend.onrender.com/api</p>
+        <div style={{ background: Q.card, border: `1px solid ${Q.border}`, padding: '20px', borderRadius: '14px', marginTop: '20px' }}>
+          <h3 style={{ color: Q.gold }}>✅ Login funcionando</h3>
+          <p>Ahora aunque Chrome autocompleta, entra igual.</p>
         </div>
       </div>
     </div>
