@@ -1,0 +1,22 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Operacion {
+  id            Int      @id @default(autoincrement())
+  numero        String   @unique
+  cliente       String
+  tipo          String
+  monto         Float
+  estado        String   @default("Pendiente")
+  nota          String?
+  comprobante   String?
+  creadoPor     String?
+  modificadoPor String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
