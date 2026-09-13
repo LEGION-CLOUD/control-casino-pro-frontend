@@ -4,117 +4,366 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-const C = { bg:'#08080F', sidebar:'#0F0F1E', card:'#12121F', border:'#252542', purple:'#8B5CF6', purpleDark:'#6D28D9', gold:'#D4AF37', goldDark:'#9C7C1C', text:'#E9E9F5', textMut:'#8B8BA7', green:'#10B981', red:'#EF4444' };
+const API = import.meta.env.VITE_API_URL || 'https://control-casino-pro-backend.onrender.com/api';
+const C = { bg:'#08080F', sidebar:'#0F0F1E', card:'#12121F', border:'#1E1E32', purple:'#8B5CF6', purpleDark:'#6D28D9', gold:'#D4AF37', goldDark:'#9C7C1C', text:'#E9E9F5', textMut:'#8B8BA7', green:'#10B981', red:'#EF4444' };
 
-function generarComprobantePDF(op, clienteObj){ const doc=new jsPDF(); doc.setFillColor(8,8,15); doc.rect(0,0,210,297,'F'); doc.setFillColor(212,175,55); doc.rect(0,0,210,24,'F'); doc.setTextColor(0,0,0); doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.text('CASINO CONTROL PRO', 12, 15); doc.setDrawColor(212,175,55); doc.setLineWidth(0.7); doc.rect(10,30,190,92); doc.setTextColor(233,233,245); doc.setFontSize(17); doc.setFont('helvetica','bold'); doc.text(op.tipo==='ingreso' ? 'COMPROBANTE DE CARGA' : 'COMPROBANTE DE RETIRO / EGRESO', 12, 42); doc.setFontSize(11); doc.setTextColor(139,92,246); doc.text(`Operación #${op.id} - ${new Date(op.fecha).toLocaleString()}`, 12, 49); doc.setTextColor(233,233,245); doc.setFontSize(11); doc.setFont('helvetica','normal'); doc.text(`Cliente: ${op.cliente_nombre || (clienteObj ? clienteObj.nombre+' '+(clienteObj.apellido||'') : '')}`, 12, 59); doc.text(`DNI: ${clienteObj?.dni || '-'} | Tel: ${clienteObj?.telefono || '-'}`, 12, 65); doc.text(`Cajero: ${op.cajero || op.cajero_nombre || '-'}`, 12, 71); doc.text(`Método: ${(op.metodo_pago||'efectivo').toUpperCase()}`, 12, 77); if(op.referencia) doc.text(`Referencia / ID Trans: ${op.referencia}`, 12, 83); doc.text(`Concepto: ${op.concepto||'-'}`, 12, 89); doc.setFillColor(18,18,31); doc.rect(124,54,74,42,'F'); doc.setDrawColor(212,175,55); doc.rect(124,54,74,42); doc.setTextColor(212,175,55); doc.setFontSize(10); doc.text('MONTO', 126, 62); doc.setFontSize(22); doc.setFont('helvetica','bold'); doc.text(`$ ${Number(op.monto).toLocaleString('es-AR')}`, 126, 76); doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(139,92,246); doc.text(op.tipo.toUpperCase(), 126, 84); doc.setTextColor(139,140,167); doc.setFontSize(9); doc.text('Conservá este comprobante. Válido como constancia de operación.', 12, 104); doc.setTextColor(212,175,55); doc.setFontSize(8); doc.text('CASINO CONTROL PRO', 12, 285); doc.text(`Generado: ${new Date().toLocaleString()}`, 140, 285); doc.save(`Comprobante_${(op.cliente_nombre||'Cliente').replace(/\s+/g,'_')}_${op.id}.pdf`); }
-const compartirWhatsApp = (op)=>{ const texto = `*CASINO CONTROL PRO* 🎰%0A*${op.tipo==='ingreso'?'COMPROBANTE DE CARGA':'COMPROBANTE DE RETIRO'}*%0A%0A👤 Cliente: ${op.cliente_nombre}%0A💰 Monto: $${Number(op.monto).toLocaleString()}%0A💳 Método: ${op.metodo_pago||'efectivo'}%0A${op.referencia?`🔖 Ref: ${op.referencia}%0A`:''}📝 Concepto: ${op.concepto||'-'}%0A👨💼 Cajero: ${op.cajero}%0A🕒 Fecha: ${new Date(op.fecha).toLocaleString()}%0A🆔 Op: #${op.id}%0A%0A_Guardá este comprobante_`; window.open(`https://wa.me/?text=${texto}`, '_blank'); };
+const inputStyle={padding:'11px 12px', borderRadius:'10px', border:`1px solid ${C.border}`, background:'#18182A', color:C.text, outline:'none', fontSize:'13px'};
+const btnPrimary={padding:'11px 16px', borderRadius:'10px', background:`linear-gradient(135deg, ${C.purple} 0%, ${C.purpleDark} 100%)`, color:'#fff', border:'none', fontWeight:800, cursor:'pointer', fontSize:'12px'};
+const btnGold={padding:'11px 16px', borderRadius:'10px', background:`linear-gradient(135deg, ${C.gold} 0%, ${C.goldDark} 100%)`, color:'#000', border:'none', fontWeight:900, cursor:'pointer', fontSize:'12px'};
+const btnGhost={padding:'11px 14px', borderRadius:'10px', background:'transparent', color:C.textMut, border:`1px solid ${C.border}`, fontWeight:700, cursor:'pointer', fontSize:'12px'};
+const btnRed={padding:'8px 12px', borderRadius:'9px', background:'#EF444415', border:'1px solid #EF444450', color:'#EF4444', fontWeight:800, cursor:'pointer', fontSize:'11px'};
+const kpiCard=(a)=>({background:C.card, padding:'14px 16px', borderRadius:'12px', border:`1px solid ${C.border}`, borderLeft:`3px solid ${a}`});
+const kpiLabel={color:C.textMut, fontSize:'9px', letterSpacing:'1px', marginBottom:'4px'};
+const kpiValue={fontSize:'18px', fontWeight:900};
+const chartCard={background:C.card, padding:'14px', borderRadius:'12px', border:`1px solid ${C.border}`};
+const chartTitle={color:C.text, fontWeight:800, marginBottom:'10px', fontSize:'12px'};
+
+const getStoredSession = () => {
+  try {
+    const raw = localStorage.getItem('cc_user');
+    if (!raw) return { user: null, token: '' };
+    const parsed = JSON.parse(raw);
+    const user = parsed && parsed.user ? parsed.user : parsed;
+    if (!user) return { user: null, token: parsed?.token || '' };
+    return {
+      user: {
+        ...user,
+        rol: String(user.rol ?? user.role ?? 'cajero').trim().toLowerCase(),
+      },
+      token: parsed?.token || '',
+    };
+  } catch {
+    return { user: null, token: '' };
+  }
+};
+
+const getStoredToken = () => getStoredSession().token;
 
 function DashboardPro(){
-  const [data,setData]=useState(null); const [desde,setDesde]=useState(''); const [hasta,setHasta]=useState('');
-  const cargar=async()=>{ try{ const q=new URLSearchParams(); if(desde) q.append('desde',desde); if(hasta) q.append('hasta',hasta); const r=await fetch(`${API}/dashboard?${q}`); if(!r.ok) throw new Error(); setData(await r.json()); }catch{ setData({resumen:{total_ingresos:0,total_egresos:0,saldo:0,cantidad_operaciones:0}, por_metodo:[], grafico_diario:[], top_clientes:[], ranking_cajeros:[]}); } };
-  useEffect(()=>{ cargar(); },[]); if(!data) return <div style={{padding:24, color:C.gold}}>Cargando dashboard...</div>;
-  const pieData=(data.por_metodo||[]).map(m=>({name:m.metodo_pago||'efectivo', value:Number(m.total)})); const COLORS=['#D4AF37','#8B5CF6','#10B981','#EF4444','#3B82F6'];
-  return (<div><div style={{display:'flex', gap:'10px', marginBottom:'20px'}}><input type="date" value={desde} onChange={e=>setDesde(e.target.value)} style={inputStyle}/><input type="date" value={hasta} onChange={e=>setHasta(e.target.value)} style={inputStyle}/><button onClick={cargar} style={btnPrimary}>FILTRAR</button><button onClick={()=>{setDesde(''); setHasta(''); setTimeout(cargar,100)}} style={btnGhost}>LIMPIAR</button></div><div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'12px', marginBottom:'20px'}}><div style={kpiCard(C.green)}><div style={kpiLabel}>INGRESOS</div><div style={{...kpiValue, color:C.green}}>${Number(data.resumen.total_ingresos).toLocaleString()}</div></div><div style={kpiCard(C.red)}><div style={kpiLabel}>EGRESOS</div><div style={{...kpiValue, color:C.red}}>${Number(data.resumen.total_egresos).toLocaleString()}</div></div><div style={kpiCard(C.gold)}><div style={kpiLabel}>SALDO SISTEMA</div><div style={{...kpiValue, color:C.gold}}>${Number(data.resumen.saldo).toLocaleString()}</div></div><div style={kpiCard(C.purple)}><div style={kpiLabel}>OPERACIONES</div><div style={{...kpiValue, color:C.purple}}>{data.resumen.cantidad_operaciones}</div></div></div><div style={{display:'grid', gridTemplateColumns:'2fr 1fr', gap:'12px', marginBottom:'20px'}}><div style={chartCard}><div style={chartTitle}>Ingresos vs Egresos por Día</div><ResponsiveContainer width="100%" height={300}><BarChart data={data.grafico_diario}><CartesianGrid stroke={C.border} strokeDasharray="3 3"/><XAxis dataKey="dia" stroke={C.textMut} fontSize={11}/><YAxis stroke={C.textMut} fontSize={11}/><Tooltip contentStyle={{background:C.card, border:`1px solid ${C.border}`}}/><Bar dataKey="ingresos" fill={C.green} radius={[8,8,0,0]}/><Bar dataKey="egresos" fill={C.red} radius={[8,8,0,0]}/></BarChart></ResponsiveContainer></div><div style={chartCard}><div style={chartTitle}>Por Método de Pago</div>{pieData.length===0?<div style={{color:C.textMut, padding:40, textAlign:'center'}}>Sin datos</div>:<ResponsiveContainer width="100%" height={300}><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} dataKey="value">{pieData.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip/><Legend/></PieChart></ResponsiveContainer>}</div></div><div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}><div style={chartCard}><div style={chartTitle}>🏆 Top 5 Clientes</div>{(data.top_clientes||[]).map((c,i)=><div key={c.id} style={listRow}><span>{i+1}. {c.nombre} {c.apellido}</span><span style={{color:C.gold}}>${Number(c.movimiento_total).toLocaleString()}</span></div>)}</div><div style={chartCard}><div style={chartTitle}>👑 Cajeros</div>{(data.ranking_cajeros||[]).map(r=><div key={r.id} style={listRow}><span>{r.cajero_nombre||r.username}</span><span style={{color:C.purple}}>{r.cantidad_ops} ops</span></div>)}</div></div></div>);
+  const [data,setData]=useState(null); const [error,setError]=useState(''); const [desde,setDesde]=useState(''); const [hasta,setHasta]=useState('');
+  const cargar=async()=>{
+    const q=new URLSearchParams();
+    if(desde) q.append('desde',desde);
+    if(hasta) q.append('hasta',hasta);
+    const token = getStoredToken();
+    const r=await fetch(`${API}/dashboard?${q}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const payload = await r.json().catch(() => null);
+    if(!r.ok) {
+      setError(payload?.error || 'Error al cargar dashboard');
+      setData(null);
+      return;
+    }
+    if(!payload || typeof payload !== 'object') {
+      setError('Respuesta del dashboard inválida');
+      setData(null);
+      return;
+    }
+    setError('');
+    setData(payload);
+  };
+  useEffect(()=>{ cargar().catch((error)=>{ console.error('Dashboard auth error:', error.message); setError('No se pudo cargar el dashboard'); setData(null); }); },[]);
+
+  if(!data) {
+    return <div style={{padding:20, color:C.gold, fontSize:12}}>{error || 'Cargando...'}</div>;
+  }
+
+  const resumen = (data && typeof data === 'object' && data.resumen && typeof data.resumen === 'object') ? data.resumen : data;
+  const totalIngresos = Number(resumen.total_ingresos ?? resumen.totalIngresos ?? data?.totalIngresos ?? data?.total_ingresos ?? 0);
+  const totalEgresos = Number(resumen.total_egresos ?? resumen.totalEgresos ?? data?.totalEgresos ?? data?.total_egresos ?? 0);
+  const balance = Number(resumen.balance ?? data?.balance ?? (totalIngresos - totalEgresos));
+  const totalClientes = Number(resumen.total_clientes ?? resumen.totalClientes ?? data?.totalClientes ?? data?.total_clientes ?? 0);
+  const totalUsuarios = Number(resumen.total_usuarios ?? resumen.totalUsuarios ?? data?.totalUsuarios ?? data?.total_usuarios ?? 0);
+  const totalOperaciones = Number(resumen.total_operaciones ?? resumen.totalOperaciones ?? data?.totalOperaciones ?? data?.total_operaciones ?? 0);
+  const ultimasOperaciones = Array.isArray(data.ultimasOperaciones) ? data.ultimasOperaciones : (Array.isArray(data.ultimas_operaciones) ? data.ultimas_operaciones : (Array.isArray(resumen.ultimasOperaciones) ? resumen.ultimasOperaciones : (Array.isArray(resumen.ultimas_operaciones) ? resumen.ultimas_operaciones : [])));
+  const pieData = Array.isArray(data.por_metodo) ? data.por_metodo.map((m) => ({ name: m.metodo_pago || 'efectivo', value: Number(m.total) })) : [];
+  const chartData = Array.isArray(data.grafico_diario) ? data.grafico_diario : [];
+  const topClientes = Array.isArray(data.top_clientes) ? data.top_clientes : [];
+  const COLORS=['#D4AF37','#8B5CF6','#10B981','#EF4444','#3B82F6'];
+
+  return (
+    <div style={{display:'grid', gap:'12px'}}>
+      <div style={{...chartCard, display:'flex', gap:'8px', flexWrap:'wrap'}}><input type="date" value={desde} onChange={e=>setDesde(e.target.value)} style={inputStyle}/><input type="date" value={hasta} onChange={e=>setHasta(e.target.value)} style={inputStyle}/><button onClick={cargar} style={btnPrimary}>FILTRAR</button><button onClick={()=>{setDesde(''); setHasta(''); setTimeout(cargar,80)}} style={btnGhost}>LIMPIAR</button></div>
+      <div style={{display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'10px'}}>
+        <div style={kpiCard(C.green)}><div style={kpiLabel}>INGRESOS</div><div style={{...kpiValue, color:C.green}}>${Number(totalIngresos).toLocaleString()}</div></div>
+        <div style={kpiCard(C.red)}><div style={kpiLabel}>EGRESOS</div><div style={{...kpiValue, color:C.red}}>${Number(totalEgresos).toLocaleString()}</div></div>
+        <div style={kpiCard(C.gold)}><div style={kpiLabel}>SALDO</div><div style={{...kpiValue, color:C.gold}}>${Number(balance).toLocaleString()}</div></div>
+        <div style={kpiCard(C.purple)}><div style={kpiLabel}>OPERACIONES</div><div style={{...kpiValue, color:C.purple}}>{Number(totalOperaciones)}</div></div>
+      </div>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}>
+        <div style={chartCard}><div style={chartTitle}>Ingresos vs Egresos</div>{chartData.length===0 ? <div style={{color:C.textMut, padding:30, textAlign:'center', fontSize:12}}>Sin datos</div> : <ResponsiveContainer width="100%" height={220}><BarChart data={chartData}><CartesianGrid stroke={C.border} strokeDasharray="3 3"/><XAxis dataKey="dia" stroke={C.textMut} fontSize={10}/><YAxis stroke={C.textMut} fontSize={10}/><Tooltip contentStyle={{background:C.card, border:`1px solid ${C.border}`, fontSize:11}}/><Bar dataKey="ingresos" fill={C.green} radius={[6,6,0,0]}/><Bar dataKey="egresos" fill={C.red} radius={[6,6,0,0]}/></BarChart></ResponsiveContainer>}</div>
+        <div style={chartCard}><div style={chartTitle}>Por Método</div>{pieData.length===0?<div style={{color:C.textMut, padding:30, textAlign:'center', fontSize:12}}>Sin datos</div>:<ResponsiveContainer width="100%" height={220}><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value">{pieData.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip/><Legend wrapperStyle={{fontSize:11}}/></PieChart></ResponsiveContainer>}</div>
+      </div>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}>
+        <div style={chartCard}><div style={chartTitle}>Top 5 Clientes</div>{topClientes.length===0 ? <div style={{color:C.textMut, padding:30, textAlign:'center', fontSize:12}}>Sin datos</div> : topClientes.map((c,i)=><div key={c.id || i} style={{display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:`1px solid ${C.border}`, fontSize:11}}><span>{i+1}. {c.nombre || ''} {c.apellido || ''}</span><span style={{color:C.gold}}>${Number(c.movimiento_total || 0).toLocaleString()}</span></div>)}</div>
+        <div style={chartCard}><div style={chartTitle}>Últimas operaciones</div>{ultimasOperaciones.length===0 ? <div style={{color:C.textMut, padding:30, textAlign:'center', fontSize:12}}>Sin datos</div> : ultimasOperaciones.slice(0,5).map((op,i)=><div key={op.id || i} style={{display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:`1px solid ${C.border}`, fontSize:11}}><span>{op.tipo || 'operación'}</span><span style={{color: op.tipo === 'egreso' ? C.red : C.green}}>${Number(op.monto || 0).toLocaleString()}</span></div>)}</div>
+      </div>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'}}>
+        <div style={chartCard}><div style={chartTitle}>Clientes</div><div style={{...kpiValue, color:C.purple}}>{Number(totalClientes)}</div></div>
+        <div style={chartCard}><div style={chartTitle}>Usuarios</div><div style={{...kpiValue, color:C.gold}}>{Number(totalUsuarios)}</div></div>
+      </div>
+    </div>
+  );
 }
-const inputStyle={padding:'10px 12px', borderRadius:'10px', border:`1px solid ${C.border}`, background:C.card, color:C.text, outline:'none'};
-const btnPrimary={padding:'10px 16px', borderRadius:'10px', background:`linear-gradient(135deg, ${C.purple} 0%, ${C.purpleDark} 100%)`, color:'#fff', border:'none', fontWeight:800, cursor:'pointer'};
-const btnGold={padding:'10px 16px', borderRadius:'10px', background:`linear-gradient(135deg, ${C.gold} 0%, ${C.goldDark} 100%)`, color:'#000', border:'none', fontWeight:900, cursor:'pointer'};
-const btnGhost={padding:'10px 16px', borderRadius:'10px', background:'transparent', color:C.textMut, border:`1px solid ${C.border}`, fontWeight:700, cursor:'pointer'};
-const btnRed={padding:'8px 12px', borderRadius:'10px', background:'#EF444415', border:'1px solid #EF444450', color:'#EF4444', fontWeight:800, cursor:'pointer', fontSize:'12px'};
-const kpiCard=(a)=>({background:C.card, padding:'16px', borderRadius:'14px', border:`1px solid ${C.border}`, borderLeft:`3px solid ${a}`});
-const kpiLabel={color:C.textMut, fontSize:'10px', letterSpacing:'1px'}; const kpiValue={fontSize:'20px', fontWeight:900}; const chartCard={background:C.card, padding:'16px', borderRadius:'14px', border:`1px solid ${C.border}`}; const chartTitle={color:C.text, fontWeight:800, marginBottom:'12px', fontSize:'13px'}; const listRow={display:'flex', justifyContent:'space-between', padding:'10px 0', borderBottom:`1px solid ${C.border}`, fontSize:'13px'};
 
 export default function App(){
-  const [user,setUser]=useState(()=>{ const s=localStorage.getItem('cc_user'); return s?JSON.parse(s):null; });
+  const [user,setUser]=useState(()=> getStoredSession().user);
   const [vista,setVista]=useState('dashboard');
-  const [loginForm,setLoginForm]=useState({username:'', password:''});
+  const [menuOpen,setMenuOpen]=useState(false);
   const [clientes,setClientes]=useState([]); const [operaciones,setOperaciones]=useState([]); const [cierres,setCierres]=useState([]); const [auditoria,setAuditoria]=useState([]); const [users,setUsers]=useState([]);
-  const [ficha,setFicha]=useState(null); const [showPassModal,setShowPassModal]=useState(false); const [passForm,setPassForm]=useState({actual:'', nueva:''});
-  const [clienteForm,setClienteForm]=useState({nombre:'', apellido:'', dni:'', telefono:'', email:''});
-  const [opForm,setOpForm]=useState({cliente_id:'', tipo:'ingreso', monto:'', concepto:'', metodo_pago:'efectivo', referencia:''});
+  const [clienteForm,setClienteForm]=useState({nombre:'', apellido:'', dni:'', telefono:''});
+  const [opForm,setOpForm]=useState({cliente_id:'', tipo:'ingreso', monto:'', medio:'efectivo', banco:'', estado:'confirmado', observaciones:'', comprobante:''});
   const [filtroAud,setFiltroAud]=useState({desde:'', hasta:''}); const [arqueo,setArqueo]=useState(''); const [obsCierre,setObsCierre]=useState('');
   const [nuevoUsuario,setNuevoUsuario]=useState({username:'', password:'', nombre:'', rol:'cajero'});
 
+  const role = String(user?.rol ?? user?.role ?? 'cajero').trim().toLowerCase();
+  const isAdmin = role === 'admin';
+  const allowedViews = isAdmin
+    ? ['dashboard', 'clientes', 'operaciones', 'cierres', 'auditoria', 'usuarios']
+    : ['dashboard', 'clientes', 'operaciones', 'cierres'];
+
+  useEffect(() => {
+    if (!allowedViews.includes(vista)) {
+      setVista(allowedViews[0]);
+    }
+  }, [role, vista]);
+
+  const apiFetch = async (path, options = {}) => {
+    const token = getStoredToken();
+    const headers = {
+      ...(options.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+    const response = await fetch(`${API}${path}`, { ...options, headers });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || `Request failed: ${response.status}`);
+    }
+    return payload;
+  };
+
   useEffect(()=>{ if(user) cargarTodo(); },[user,vista]);
-  const cargarTodo=async()=>{ try{ const [c,o,ci,a,u]=await Promise.all([ fetch(`${API}/clientes`).then(r=>r.ok?r.json():[]), fetch(`${API}/operaciones`).then(r=>r.ok?r.json():[]), fetch(`${API}/cierres`).then(r=>r.ok?r.json():[]), fetch(`${API}/auditoria`).then(r=>r.ok?r.json():[]), fetch(`${API}/users`).then(r=>r.ok?r.json():[]), ]); setClientes(c||[]); setOperaciones(o||[]); setCierres(ci||[]); setAuditoria(a||[]); setUsers(u||[]); }catch(e){} };
+  const cargarTodo=async()=>{ 
+    try{ 
+      const requests = [
+        apiFetch('/clientes').catch(()=>[]),
+        apiFetch('/operaciones').catch(()=>[]),
+        apiFetch('/cierres').catch(()=>[]),
+      ];
+      if (role === 'admin') {
+        requests.push(apiFetch('/auditoria').catch(()=>[]));
+        requests.push(apiFetch('/users').catch(()=>[]));
+      }
+
+      const [c,o,ci,a,u]=await Promise.all(requests);
+      setClientes(Array.isArray(c)?c:[]); setOperaciones(Array.isArray(o)?o:[]); setCierres(Array.isArray(ci)?ci:[]); setAuditoria(Array.isArray(a)?a:[]); setUsers(Array.isArray(u)?u:[]);
+    }catch(e){ console.error('Load data error:', e.message); }
+  };
   
   const handleLogin=async(e)=>{ 
     e.preventDefault(); 
     const fd = new FormData(e.target);
-    const u = (fd.get('cc_user_x9') || '').toString().trim().toLowerCase();
-    const p = (fd.get('cc_pass_x9') || '').toString().trim();
-    if((u==='admin' && p==='admin123') || (u==='administrador' && p==='administrador123')){
-      const demo={id:1, username:u, nombre:'Administrador', rol:'admin'};
-      localStorage.setItem('cc_user', JSON.stringify(demo));
-      setUser(demo);
-      return;
+    const username = (fd.get('cc_user_x9') || '').toString().trim();
+    const password = (fd.get('cc_pass_x9') || '').toString().trim();
+
+    if(!username || !password){
+      return alert('Ingresá usuario y contraseña');
     }
+
     try{
-      const r=await fetch(`${API}/login`,{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:u, password:p})}); 
-      if(!r.ok){ const er=await r.json().catch(()=>({error:'Error login'})); return alert(er.error); } 
-      const userData=await r.json(); 
-      localStorage.setItem('cc_user', JSON.stringify(userData)); 
-      setUser(userData);
-    }catch(err){ alert('Usuario o contraseña incorrectos'); }
+      const r=await fetch(`${API}/login`,{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username, password})});
+      const result = await r.json().catch(()=>({ error: 'Error de autenticación' }));
+      if(!r.ok){
+        throw new Error(result.error || 'Credenciales inválidas');
+      }
+      const token = result.token || '';
+      const userData = result.user || result;
+      const normalizedUser = {
+        ...userData,
+        rol: String(userData?.rol ?? userData?.role ?? 'cajero').trim().toLowerCase(),
+      };
+      const session = { user: normalizedUser, token };
+      localStorage.setItem('cc_user', JSON.stringify(session));
+      setUser(normalizedUser);
+    }catch(err){
+      alert(err.message || 'Usuario o contraseña incorrectos');
+    }
   };
 
-  const crearCliente=async(e)=>{ e.preventDefault(); if(!clienteForm.nombre || !clienteForm.nombre.trim()) return alert('El nombre es obligatorio'); await fetch(`${API}/clientes`,{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...clienteForm, creado_por:user.id})}); setClienteForm({nombre:'', apellido:'', dni:'', telefono:'', email:''}); cargarTodo(); };
-  const [editCliente,setEditCliente]=useState(null);
-  const guardarEdicionCliente=async(e)=>{ e.preventDefault(); if(!editCliente.nombre || !editCliente.nombre.trim()) return alert('Nombre obligatorio'); await fetch(`${API}/clientes/${editCliente.id}`,{method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(editCliente)}); setEditCliente(null); cargarTodo(); };
-  const eliminarCliente=async(id)=>{ if(!confirm('¿Seguro querés ELIMINAR este cliente?')) return; const r=await fetch(`${API}/clientes/${id}`,{method:'DELETE'}); let j={}; try{ j=await r.json(); }catch(e){ j={}; } if(j.error && String(j.error).toLowerCase().includes('operacion')){ if(!confirm('Este cliente TIENE operaciones. ¿Querés BORRAR TODAS sus operaciones y luego el cliente?')) return; const opsDelCliente = operaciones.filter(o=> String(o.cliente_id)===String(id)); for(const op of opsDelCliente){ await fetch(`${API}/operaciones/${op.id}`,{method:'DELETE'}); } const r2=await fetch(`${API}/clientes/${id}`,{method:'DELETE'}); const j2=await r2.json().catch(()=>({})); if(j2.error) return alert(j2.error); alert('Cliente y sus operaciones eliminados'); cargarTodo(); return; } if(j.error) alert(j.error); else cargarTodo(); };
-  const crearOperacion=async(e)=>{ e.preventDefault(); const payload={...opForm, usuario_id:user.id, cliente_id:Number(opForm.cliente_id), monto:Number(opForm.monto)}; const res=await fetch(`${API}/operaciones`,{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); const data=await res.json(); if(data.id){ const opTemp={id:data.id, cliente_nombre: clientes.find(x=>String(x.id)===String(opForm.cliente_id))?.nombre || 'Cliente', fecha:new Date().toISOString(), cajero:user.username, ...opForm, monto:Number(opForm.monto)}; setOpForm({cliente_id:'', tipo:'ingreso', monto:'', concepto:'', metodo_pago:'efectivo', referencia:''}); await cargarTodo(); if(confirm('Operación cargada OK. ¿Generar comprobante?')){ generarComprobantePDF(opTemp, clientes.find(x=>String(x.id)===String(payload.cliente_id))); } } };
-  const eliminarOperacion=async(id)=>{ if(!confirm('¿Eliminar esta operación?')) return; await fetch(`${API}/operaciones/${id}`,{method:'DELETE'}); cargarTodo(); };
-  const cargarFicha=async(id)=>{ const r=await fetch(`${API}/clientes/${id}/ficha`); setFicha(await r.json()); };
-  const hacerCierre=async()=>{ if(!arqueo) return alert('Poné arqueo'); const r=await fetch(`${API}/cierres`,{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario_id:user.id, arqueo_real:Number(arqueo), observaciones:obsCierre})}); const j=await r.json(); if(j.id){ setArqueo(''); setObsCierre(''); cargarTodo(); alert(`Cierre ${j.estado} dif ${j.diferencia}`);} };
-  const exportarExcel=()=>{ const wb=XLSX.utils.book_new(); const ws1=XLSX.utils.json_to_sheet(auditoria.map(a=>({Fecha:new Date(a.fecha).toLocaleString(), Usuario:a.username, Accion:a.accion, Detalle:a.detalle}))); XLSX.utils.book_append_sheet(wb, ws1, "Auditoria"); const ws2=XLSX.utils.json_to_sheet(operaciones.map(o=>({Fecha:new Date(o.fecha).toLocaleString(), Cliente:o.cliente_nombre, Tipo:o.tipo, Metodo:o.metodo_pago, Monto:o.monto, Ref:o.referencia, Concepto:o.concepto, Cajero:o.cajero}))); XLSX.utils.book_append_sheet(wb, ws2, "Operaciones"); XLSX.writeFile(wb, `Casino_${new Date().toISOString().slice(0,10)}.xlsx`); };
-  const exportarPDFOperaciones=()=>{ const doc=new jsPDF(); doc.setFillColor(8,8,15); doc.rect(0,0,210,297,'F'); doc.setTextColor(212,175,55); doc.setFontSize(16); doc.text('CASINO CONTROL - OPERACIONES',10,15); const rows=operaciones.slice(0,300).map(o=>[new Date(o.fecha).toLocaleDateString(), o.cliente_nombre, o.tipo, o.metodo_pago||'efectivo', `$${o.monto}`, o.referencia||'', o.concepto||'']); autoTable(doc,{startY:20, head:[['Fecha','Cliente','Tipo','Metodo','Monto','Ref','Concepto']], body:rows, theme:'grid', headStyles:{fillColor:[139,92,246]}, styles:{fontSize:7}}); doc.save('Operaciones.pdf'); };
-  const borrarAuditoria=async()=>{ if(!confirm('¿Seguro querés BORRAR TODA la auditoría?')) return; try{ let r=await fetch(`${API}/auditoria`,{method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({confirmacion:'BORRAR AUDITORIA'})}); let j={}; try{ j=await r.json(); }catch(e){ j={}; } if(r.ok || j.ok){ alert('Auditoría borrada'); cargarTodo(); return; } r=await fetch(`${API}/auditoria/borrar`,{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({})}); j={}; try{ j=await r.json(); }catch(e){ j={}; } if(r.ok || j.ok){ alert('Auditoría borrada'); cargarTodo(); return; } alert('No se pudo borrar: '+(j.error||r.status)); }catch(e){ alert('Error: '+e.message); } };
-  const crearUsuario=async(e)=>{ e.preventDefault(); const r=await fetch(`${API}/users`,{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...nuevoUsuario, creador_id:user.id})}); const j=await r.json(); if(j.error) alert(j.error); else { setNuevoUsuario({username:'', password:'', nombre:'', rol:'cajero'}); cargarTodo(); } };
-  const eliminarUsuario=async(id)=>{ if(!confirm('¿Eliminar usuario?')) return; const r=await fetch(`${API}/users/${id}`,{method:'DELETE'}); const j=await r.json(); if(j.error) alert(j.error); else cargarTodo(); };
-  const hacerBackup=async()=>{ const r=await fetch(`${API}/backup`); const j=await r.json(); if(j.ok) alert(`Backup OK: ${j.archivo}`); else alert('Error'); };
-  const cambiarPass=async()=>{ const r=await fetch(`${API}/cambiar-password`,{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId:user.id, actual:passForm.actual, nueva:passForm.nueva})}); const j=await r.json(); if(j.ok){ alert('Contraseña cambiada'); setShowPassModal(false); setPassForm({actual:'', nueva:''}); } else alert(j.error); };
+  const crearCliente=async(e)=>{ 
+    e.preventDefault(); 
+    if(!clienteForm.nombre.trim()) return alert('Nombre obligatorio'); 
+    try{ 
+      const payload = {
+        nombre: (clienteForm.nombre + ' ' + clienteForm.apellido).trim(),
+        apellido: clienteForm.apellido,
+        dni: clienteForm.dni,
+        telefono: clienteForm.telefono,
+        email: '',
+        creado_por: user?.id||1
+      };
+      await apiFetch('/clientes', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+      setClienteForm({nombre:'', apellido:'', dni:'', telefono:''}); 
+      cargarTodo(); 
+    }catch(err){ alert('Error creando cliente: '+err.message); } 
+  };
+  const eliminarCliente=async(id)=>{ if(!confirm('¿Eliminar cliente?')) return; await apiFetch(`/clientes/${id}`,{method:'DELETE'}); cargarTodo(); };
+  const cargarFicha=async(id)=>{ const j = await apiFetch(`/clientes/${id}/ficha`); if(j && j.cliente) alert(`FICHA ${j.cliente.nombre}\nSaldo: $${j.cliente.saldo}\nOps: ${Array.isArray(j.historial) ? j.historial.length : 0}`); };
+  
+  const crearOperacion=async(e)=>{ 
+    e.preventDefault(); 
+    if(!opForm.cliente_id || !opForm.monto) return alert('Falta cliente o monto');
+    const monto = Number(opForm.monto);
+    if (!Number.isFinite(monto) || monto <= 0) return alert('El monto debe ser mayor a cero');
+    try{
+      const payload={
+        cliente_id:Number(opForm.cliente_id),
+        tipo:opForm.tipo,
+        monto,
+        medio:opForm.medio,
+        banco:opForm.banco,
+        estado:opForm.estado,
+        observaciones:opForm.observaciones,
+        comprobante:opForm.comprobante,
+        usuario_id:user?.id||1,
+      };
+      await apiFetch('/operaciones', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+      setOpForm({cliente_id:'', tipo:'ingreso', monto:'', medio:'efectivo', banco:'', estado:'confirmado', observaciones:'', comprobante:''});
+      cargarTodo(); 
+    }catch(err){ alert('Error cargando operación: '+err.message); }
+  };
+  
+  const hacerCierre=async()=>{ if(!arqueo) return alert('Poné arqueo'); const j = await apiFetch('/cierres', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario_id:user.id, arqueo_real:Number(arqueo), observaciones:obsCierre})}); if(j && j.id){ setArqueo(''); setObsCierre(''); cargarTodo(); alert(`Caja cerrada: ${j.estado}`); } };
+  const exportarExcel=()=>{ const wb=XLSX.utils.book_new(); const ws1=XLSX.utils.json_to_sheet(auditoria.map(a=>({Fecha:new Date(a.fecha).toLocaleString(), Usuario:a.username||a.usuario, Accion:a.accion}))); XLSX.utils.book_append_sheet(wb, ws1, "Auditoria"); XLSX.writeFile(wb, `Casino_${new Date().toISOString().slice(0,10)}.xlsx`); };
+  const exportarPDFCierre=()=>{ const cierre = Array.isArray(cierres) && cierres.length ? cierres[0] : null; if (!cierre) { alert('No hay cierre para exportar'); return; } const doc=new jsPDF(); doc.setFontSize(18); doc.text('CONTROL CASINO PRO', 14, 18); doc.setFontSize(12); doc.text('CIERRE DE CAJA', 14, 28); doc.setFontSize(10); doc.text(`Cajero: ${cierre.usuario || 'Sistema'}`, 14, 40); doc.text(`Fecha: ${new Date(cierre.created_at || cierre.fecha || Date.now()).toLocaleString()}`, 14, 48); doc.text(`Total ingresos: $${Number(cierre.total_ingresos || 0).toLocaleString()}`, 14, 58); doc.text(`Total egresos: $${Number(cierre.total_egresos || 0).toLocaleString()}`, 14, 66); doc.text(`Saldo esperado: $${Number(cierre.saldo_esperado || cierre.total || 0).toLocaleString()}`, 14, 74); doc.text(`Arqueo real: $${Number(cierre.arqueo_real || 0).toLocaleString()}`, 14, 82); doc.text(`Diferencia: $${Number(cierre.diferencia || 0).toLocaleString()}`, 14, 90); doc.text(`Estado: ${cierre.estado || 'CAJA OK'}`, 14, 98); doc.text(`Observaciones: ${cierre.observaciones || 'Sin observaciones'}`, 14, 106); const detalle = operaciones.slice(0, 25).map((o) => [new Date(o.created_at || o.fecha).toLocaleDateString(), o.cliente_nombre || `Cliente ${o.cliente_id}`, o.tipo.toUpperCase(), '$' + Number(o.monto || 0).toLocaleString(), o.medio || 'efectivo']); autoTable(doc,{startY:120, head:[['Fecha','Cliente','Tipo','Monto','Medio']], body:detalle, styles:{fontSize:8}, headStyles:{fillColor:[139,92,246]}, alternateRowStyles:{fillColor:[245,245,245]}}); doc.save(`Cierre_${new Date(cierre.created_at || Date.now()).toISOString().slice(0,10)}.pdf`); };
+  const hacerBackup=async()=>{ if (role !== 'admin') return alert('Permiso denegado'); try{ const j = await apiFetch('/backup'); alert(j.archivo?`Backup: ${j.archivo}`:'Backup OK'); }catch(err){ alert('Error de backup: '+err.message); } };
+  const borrarAuditoria=async()=>{ if (role !== 'admin') return alert('Permiso denegado'); if(!confirm('¿Borrar toda la auditoria?')) return; await apiFetch('/auditoria', {method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({confirmacion:'BORRAR AUDITORIA'})}); cargarTodo(); };
+  const crearUsuario=async(e)=>{ if (role !== 'admin') return alert('Permiso denegado'); e.preventDefault(); try{ const j = await apiFetch('/users', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...nuevoUsuario, creador_id:user.id})}); if(j && j.error) throw new Error(j.error); setNuevoUsuario({username:'', password:'', nombre:'', rol:'cajero'}); cargarTodo(); }catch(err){ alert('Error: '+err.message); } };
+  const eliminarUsuario=async(id)=>{ if (role !== 'admin') return alert('Permiso denegado'); if(id===1) return alert('No se puede eliminar admin'); if(!confirm('¿Eliminar usuario?')) return; await apiFetch(`/users/${id}`,{method:'DELETE'}); cargarTodo(); };
 
   if(!user){
     return (
-      <div style={{minHeight:'100vh', background:`radial-gradient(1200px at 20% -10%, #1E1B4B 0%, ${C.bg} 60%)`, display:'flex', alignItems:'center', justifyContent:'center'}}>
-        <form onSubmit={handleLogin} autoComplete="off" style={{background:C.card, border:`1px solid ${C.border}`, padding:'36px', borderRadius:'20px', width:'360px'}}>
-          <div style={{textAlign:'center', marginBottom:'28px'}}>
-            <div style={{width:'50px', height:'50px', margin:'0 auto 14px', background:`linear-gradient(135deg, ${C.purple} 0%, ${C.gold} 100%)`, borderRadius:'14px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'22px'}}>♠</div>
-            <h2 style={{color:C.text, fontWeight:900, margin:0, letterSpacing:'1px'}}>CONTROL DEL CASINO</h2>
+      <div style={{minHeight:'100vh', background:`radial-gradient(1200px at 20% -10%, #1E1B4B 0%, ${C.bg} 60%)`, display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
+        <form onSubmit={handleLogin} autoComplete="off" style={{background:C.card, border:`1px solid ${C.border}`, padding:'32px', borderRadius:'16px', width:'100%', maxWidth:340}}>
+          <div style={{textAlign:'center', marginBottom:'24px'}}>
+            <div style={{width:'44px', height:'44px', margin:'0 auto 12px', background:`linear-gradient(135deg, ${C.purple} 0%, ${C.gold} 100%)`, borderRadius:'12px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'20px'}}>♠</div>
+            <h2 style={{color:C.text, fontWeight:900, margin:0, fontSize:16, letterSpacing:1}}>CONTROL DEL CASINO</h2>
+            <div style={{color:C.textMut, fontSize:10, marginTop:4, letterSpacing:1}}>CONTROL PRO</div>
           </div>
-          {/* Campos trampa para engañar a Chrome */}
-          <input type="text" name="fake_user" style={{display:'none'}} autoComplete="off" />
-          <input type="password" name="fake_pass" style={{display:'none'}} autoComplete="new-password" />
-          <input name="cc_user_x9" autoComplete="off" type="text" spellCheck="false" autoCorrect="off" style={{...inputStyle, width:'100%', marginBottom:'12px', boxSizing:'border-box'}} placeholder="usuario" defaultValue="" />
-          <input name="cc_pass_x9" autoComplete="new-password" type="password" spellCheck="false" autoCorrect="off" style={{...inputStyle, width:'100%', marginBottom:'22px', boxSizing:'border-box'}} placeholder="contraseña" defaultValue="" />
-          <button type="submit" style={{...btnPrimary, width:'100%', padding:'13px', fontSize:'14px', letterSpacing:'1px'}}>INGRESAR</button>
+          <input name="cc_user_x9" autoComplete="off" type="text" style={{...inputStyle, width:'100%', marginBottom:'10px', boxSizing:'border-box'}} placeholder="usuario" defaultValue="" />
+          <input name="cc_pass_x9" autoComplete="new-password" type="password" style={{...inputStyle, width:'100%', marginBottom:'18px', boxSizing:'border-box'}} placeholder="contraseña" defaultValue="" />
+          <button type="submit" style={{...btnPrimary, width:'100%', padding:'12px'}}>INGRESAR</button>
         </form>
       </div>
     );
   }
 
-  const menuBtn=(id,icon,label)=>(<button onClick={()=>setVista(id)} style={{display:'flex', alignItems:'center', gap:'10px', width:'100%', padding:'12px 14px', marginBottom:'6px', borderRadius:'12px', background: vista===id ? `linear-gradient(135deg, ${C.purple}15, ${C.gold}15)` : 'transparent', border: vista===id ? `1px solid ${C.purple}40` : '1px solid transparent', color: vista===id ? C.text : C.textMut, fontWeight: vista===id?800:500, cursor:'pointer', textAlign:'left', fontSize:'13px'}}><span>{icon}</span>{label}</button>);
+  const menuBtn=(id,icon,label)=>(<button onClick={()=>{ if (!allowedViews.includes(id)) return; setVista(id); setMenuOpen(false); }} style={{display:'flex', alignItems:'center', gap:'10px', width:'100%', padding:'11px 12px', marginBottom:'4px', borderRadius:'10px', background: vista===id ? `linear-gradient(135deg, ${C.purple}15, ${C.gold}15)` : 'transparent', border: vista===id ? `1px solid ${C.purple}30` : '1px solid transparent', color: vista===id ? C.text : C.textMut, fontWeight: vista===id?800:500, cursor:'pointer', textAlign:'left', fontSize:'12px'}}><span style={{fontSize:13}}>{icon}</span>{label}</button>);
+
+  const visibleMenu = isAdmin
+    ? ['dashboard','clientes','operaciones','cierres','auditoria','usuarios']
+    : ['dashboard','clientes','operaciones','cierres'];
+
+  const renderMenu = () => {
+    const menuMap = {
+      dashboard: { icon: '📊', label: 'PANEL' },
+      clientes: { icon: '👥', label: 'CLIENTES' },
+      operaciones: { icon: '💸', label: 'OPERACIONES' },
+      cierres: { icon: '🔒', label: 'CIERRES' },
+      auditoria: { icon: '📋', label: 'AUDITORIA' },
+      usuarios: { icon: '👤', label: 'USUARIOS' },
+    };
+
+    return visibleMenu.map((id) => menuBtn(id, menuMap[id].icon, menuMap[id].label));
+  };
 
   return (
     <div style={{display:'flex', minHeight:'100vh', background:C.bg, color:C.text, fontFamily:'Inter, system-ui'}}>
-      <aside style={{width:'260px', background:C.sidebar, borderRight:`1px solid ${C.border}`, padding:'20px', position:'fixed', height:'100vh', display:'flex', flexDirection:'column', overflowY:'auto'}}>
-        <div style={{display:'flex', alignItems:'center', gap:'10px', marginBottom:'24px'}}><div style={{width:'36px', height:'36px', borderRadius:'10px', background:`linear-gradient(135deg, ${C.purple} 0%, ${C.gold} 100%)`, display:'flex', alignItems:'center', justifyContent:'center'}}>♠</div><div><div style={{fontWeight:900, fontSize:'14px'}}>CASINO</div><div style={{fontSize:'10px', color:C.textMut, letterSpacing:'1px'}}>CONTROL PRO</div></div></div>
-        <div style={{flex:1}}>{menuBtn('dashboard','📊','PANEL')}{menuBtn('clientes','👥','CLIENTES')}{menuBtn('operaciones','💸','OPERACIONES')}{menuBtn('cierres','🔒','CIERRES')}{menuBtn('auditoria','📋','AUDITORIA')}{menuBtn('usuarios','👤','USUARIOS')}</div>
-        <div style={{borderTop:`1px solid ${C.border}`, paddingTop:'16px'}}><button onClick={()=>setShowPassModal(true)} style={{...btnGhost, width:'100%', marginBottom:'8px', fontSize:'12px'}}>🔑 CAMBIAR PASE</button><button onClick={hacerBackup} style={{...btnGhost, width:'100%', marginBottom:'8px', fontSize:'12px'}}>💾 COPIA SEGURIDAD</button><button onClick={()=>{localStorage.clear(); setUser(null);}} style={{width:'100%', padding:'10px', borderRadius:'10px', background:'#EF444415', border:'1px solid #EF444430', color:'#EF4444', fontWeight:800, cursor:'pointer'}}>SALIR</button><div style={{marginTop:'12px', textAlign:'center', fontSize:'11px', color:C.textMut}}>{user.nombre}<br/><span style={{color:C.gold}}>{user.username} • {user.rol}</span></div></div>
+      {menuOpen && <div onClick={()=>setMenuOpen(false)} style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:90}} />}
+      <style>{`
+        @media (max-width: 768px) {
+          aside { transform: translateX(-100%); transition: transform 0.25s ease; }
+          aside.open { transform: translateX(0) !important; }
+          main { margin-left: 0 !important; padding: 12px !important; }
+          .hamburger { display: block !important; }
+        }
+        @media (min-width: 769px) { .hamburger { display: none !important; } }
+      `}</style>
+      <aside className={menuOpen ? 'open' : ''} style={{width:'260px', background:C.sidebar, borderRight:`1px solid ${C.border}`, padding:'18px', position:'fixed', height:'100vh', display:'flex', flexDirection:'column', overflowY:'auto', zIndex:100}}>
+        <div style={{display:'flex', alignItems:'center', gap:'10px', marginBottom:'20px'}}><div style={{width:'34px', height:'34px', borderRadius:'9px', background:`linear-gradient(135deg, ${C.purple} 0%, ${C.gold} 100%)`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16}}>♠</div><div><div style={{fontWeight:900, fontSize:'13px'}}>CASINO</div><div style={{fontSize:'9px', color:C.textMut, letterSpacing:'1px'}}>CONTROL PRO</div></div></div>
+        <div style={{flex:1}}>{renderMenu()}</div>
+        <div style={{borderTop:`1px solid ${C.border}`, paddingTop:'14px'}}><button onClick={()=>{localStorage.clear(); setUser(null);}} style={{width:'100%', padding:'10px', borderRadius:'9px', background:'#EF444415', border:'1px solid #EF444430', color:'#EF4444', fontWeight:800, cursor:'pointer', fontSize:12}}>SALIR</button></div>
       </aside>
-      <main style={{marginLeft:'260px', flex:1, padding:'28px', background:`radial-gradient(900px at 80% -20%, #1E1B4B30 0%, transparent 60%), ${C.bg}`, minHeight:'100vh'}}>
-        <div style={{marginBottom:'20px', display:'flex', justifyContent:'space-between', alignItems:'center'}}><h1 style={{fontSize:'20px', fontWeight:900}}>{vista.toUpperCase()}</h1><div style={{display:'flex', gap:'8px'}}><button onClick={exportarExcel} style={btnGhost}>📊 EXCEL</button><button onClick={exportarPDFOperaciones} style={btnGold}>📄 PDF OPERACIONES</button></div></div>
+      <main style={{marginLeft:'260px', flex:1, padding:'16px', minHeight:'100vh', maxWidth:900}}>
+        <div style={{marginBottom:'12px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:8}}>
+          <div style={{display:'flex', alignItems:'center', gap:10}}><button onClick={()=>setMenuOpen(!menuOpen)} className="hamburger" style={{padding:'8px 10px', borderRadius:9, background:C.card, border:`1px solid ${C.border}`, color:C.text, fontWeight:800, fontSize:12}}>☰</button><h1 style={{fontSize:'15px', fontWeight:900, margin:0, letterSpacing:0.5}}>{vista.toUpperCase()}</h1></div>
+          <div style={{display:'flex', gap:'6px'}}><button onClick={exportarExcel} style={{...btnGhost, padding:'8px 10px', fontSize:11}}>EXCEL</button><button onClick={exportarPDFCierre} style={{...btnGold, padding:'8px 10px', fontSize:11}}>PDF</button><button onClick={hacerBackup} style={{...btnGhost, padding:'8px 10px', fontSize:11, borderColor:C.gold, color:C.gold}}>BACKUP</button></div>
+        </div>
+
         {vista==='dashboard' && <DashboardPro />}
-        {vista==='clientes' && (<div><form onSubmit={crearCliente} style={{...chartCard, display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'16px'}}><input style={inputStyle} placeholder="Nombre *" value={clienteForm.nombre} onChange={e=>setClienteForm({...clienteForm, nombre:e.target.value})} required /><input style={inputStyle} placeholder="Apellido" value={clienteForm.apellido} onChange={e=>setClienteForm({...clienteForm, apellido:e.target.value})} /><input style={inputStyle} placeholder="DNI" value={clienteForm.dni} onChange={e=>setClienteForm({...clienteForm, dni:e.target.value})} /><input style={inputStyle} placeholder="Telefono" value={clienteForm.telefono} onChange={e=>setClienteForm({...clienteForm, telefono:e.target.value})} /><input style={inputStyle} placeholder="Email" value={clienteForm.email} onChange={e=>setClienteForm({...clienteForm, email:e.target.value})} /><button type="submit" style={btnPrimary}>CREAR CLIENTE</button></form>{clientes.map(c=>(<div key={c.id} style={{...chartCard, marginBottom:'8px', display:'flex', justifyContent:'space-between', alignItems:'center'}}><span><b style={{color:C.gold}}>{c.nombre} {c.apellido}</b> <span style={{color:C.textMut}}>DNI:{c.dni} | {c.telefono}</span></span><div style={{display:'flex', gap:'6px'}}><button onClick={()=>cargarFicha(c.id)} style={btnGhost}>FICHA</button><button onClick={()=>setEditCliente(c)} style={{...btnGhost, borderColor:C.gold, color:C.gold}}>✏ EDITAR</button><button onClick={()=>eliminarCliente(c.id)} style={btnRed}>🗑 ELIMINAR</button></div></div>))}</div>)}
-        {vista==='operaciones' && (<div><form onSubmit={crearOperacion} style={{...chartCard, display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:'10px', marginBottom:'16px', border:`1px solid ${C.purple}40`}}><select style={inputStyle} value={opForm.cliente_id} onChange={e=>setOpForm({...opForm, cliente_id:e.target.value})} required><option value="">Cliente</option>{clientes.map(c=><option key={c.id} value={c.id}>{c.nombre} {c.apellido}</option>)}</select><select style={inputStyle} value={opForm.tipo} onChange={e=>setOpForm({...opForm, tipo:e.target.value})}><option value="ingreso">INGRESO</option><option value="egreso">EGRESO</option></select><select style={inputStyle} value={opForm.metodo_pago} onChange={e=>setOpForm({...opForm, metodo_pago:e.target.value})}><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="mercado_pago">Mercado Pago</option><option value="tarjeta">Tarjeta</option><option value="cripto">Cripto</option></select><input style={inputStyle} type="number" placeholder="Monto" value={opForm.monto} onChange={e=>setOpForm({...opForm, monto:e.target.value})} required /><input style={inputStyle} placeholder="Referencia" value={opForm.referencia} onChange={e=>setOpForm({...opForm, referencia:e.target.value})} /><input style={inputStyle} placeholder="Concepto" value={opForm.concepto} onChange={e=>setOpForm({...opForm, concepto:e.target.value})} /><button type="submit" style={btnGold}>CARGAR OPERACIÓN</button></form>{operaciones.map(o=>(<div key={o.id} style={{...chartCard, marginBottom:'8px', display:'flex', justifyContent:'space-between', alignItems:'center', borderLeft:`3px solid ${o.tipo==='ingreso'?C.green:C.red}`}}><div style={{fontSize:'13px'}}><div style={{fontSize:'11px', color:C.textMut}}>{new Date(o.fecha).toLocaleString()} | #{o.id} | Cajero: {o.cajero}</div><div><b>{o.cliente_nombre}</b> • <b style={{color:C.gold}}>${Number(o.monto).toLocaleString()}</b> • {o.metodo_pago} • {o.tipo}</div><div style={{fontSize:'11px', color:C.textMut}}>{o.concepto}</div></div><div style={{display:'flex', gap:'6px'}}><button onClick={()=>generarComprobantePDF(o, clientes.find(c=>String(c.id)===String(o.cliente_id)))} style={{...btnGold, padding:'8px 12px', fontSize:'12px'}}>🧾 COMPROBANTE</button><button onClick={()=>compartirWhatsApp(o)} style={{...btnPrimary, padding:'8px 12px', fontSize:'12px', background:'#25D366'}}>📱 WHATSAPP</button><button onClick={()=>eliminarOperacion(o.id)} style={btnRed}>🗑</button></div></div>))}</div>)}
-        {vista==='cierres' && (<div><div style={{...chartCard, display:'flex', gap:'10px', marginBottom:'16px'}}><input style={inputStyle} type="number" placeholder="Arqueo Real" value={arqueo} onChange={e=>setArqueo(e.target.value)}/><input style={inputStyle} placeholder="Observaciones" value={obsCierre} onChange={e=>setObsCierre(e.target.value)}/><button onClick={hacerCierre} style={btnPrimary}>CERRAR CAJA</button></div>{cierres.map(c=>(<div key={c.id} style={{...chartCard, marginBottom:'8px', display:'flex', justifyContent:'space-between'}}><div><b>{new Date(c.fecha_cierre).toLocaleString()}</b> • <span style={{color:c.estado==='CUADRA'?C.green:c.estado==='SOBRANTE'?'#F59E0B':C.red}}>{c.estado} ${c.diferencia}</span><br/><span style={{fontSize:'11px', color:C.textMut}}>Ing:{c.total_ingresos} Egr:{c.total_egresos} Calc:{c.saldo_calculado} Real:{c.arqueo_real} | {c.username}</span></div><button onClick={()=>{ const doc=new jsPDF(); autoTable(doc,{head:[['Campo','Valor']], body:[['Fecha',new Date(c.fecha_cierre).toLocaleString()],['Ingresos',c.total_ingresos],['Egresos',c.total_egresos],['Diferencia',c.diferencia],['Estado',c.estado],['Obs',c.observaciones]]}); doc.save(`Cierre_${c.id}.pdf`); }} style={btnGold}>📄 PDF</button></div>))}</div>)}
-        {vista==='auditoria' && (<div><div style={{...chartCard, display:'flex', gap:'8px', marginBottom:'16px', flexWrap:'wrap'}}><input type="date" style={inputStyle} value={filtroAud.desde} onChange={e=>setFiltroAud({...filtroAud, desde:e.target.value})}/><input type="date" style={inputStyle} value={filtroAud.hasta} onChange={e=>setFiltroAud({...filtroAud, hasta:e.target.value})}/><button onClick={()=>{setFiltroAud({desde:'', hasta:''})}} style={btnGhost}>LIMPIAR</button><button onClick={exportarExcel} style={{...btnPrimary, background:'#10B981'}}>📊 EXCEL</button><button onClick={borrarAuditoria} style={btnRed}>🗑 BORRAR AUDITORIA</button></div><div style={{maxHeight:'70vh', overflow:'auto'}}>{auditoria.filter(a=>{ if(!filtroAud.desde && !filtroAud.hasta) return true; const d=new Date(a.fecha).toISOString().slice(0,10); if(filtroAud.desde && d < filtroAud.desde) return false; if(filtroAud.hasta && d > filtroAud.hasta) return false; return true; }).map(a=>(<div key={a.id} style={{...chartCard, marginBottom:'6px', padding:'10px 14px', fontSize:'12px'}}>{new Date(a.fecha).toLocaleString()} | <b style={{color:C.purple}}>{a.username||'-'}</b> | {a.accion} | <span style={{color:C.textMut}}>{a.detalle}</span></div>))}</div></div>)}
-        {vista==='usuarios' && (<div><form onSubmit={crearUsuario} style={{...chartCard, display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'16px'}}><input style={inputStyle} placeholder="usuario" value={nuevoUsuario.username} onChange={e=>setNuevoUsuario({...nuevoUsuario, username:e.target.value})} required/><input style={inputStyle} placeholder="password" type="password" value={nuevoUsuario.password} onChange={e=>setNuevoUsuario({...nuevoUsuario, password:e.target.value})} required/><input style={inputStyle} placeholder="Nombre" value={nuevoUsuario.nombre} onChange={e=>setNuevoUsuario({...nuevoUsuario, nombre:e.target.value})}/><select style={inputStyle} value={nuevoUsuario.rol} onChange={e=>setNuevoUsuario({...nuevoUsuario, rol:e.target.value})}><option value="cajero">cajero</option><option value="admin">admin</option></select><button type="submit" style={btnGold}>CREAR USUARIO</button></form>{users.map(u=>(<div key={u.id} style={{...chartCard, marginBottom:'8px', display:'flex', justifyContent:'space-between'}}><span><b style={{color:C.gold}}>{u.username}</b> | {u.nombre} | <span style={{color:C.purple}}>{u.rol}</span></span><div style={{display:'flex', gap:'8px'}}><span style={{fontSize:'11px', color:C.textMut}}>{new Date(u.creado_en).toLocaleString()}</span>{u.id!==1 && <button onClick={()=>eliminarUsuario(u.id)} style={btnRed}>🗑 ELIMINAR</button>}</div></div>))}</div>)}
+        
+        {vista==='clientes' && (
+          <div style={{display:'grid', gap:'10px'}}>
+            <form onSubmit={crearCliente} style={{...chartCard, display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px'}}>
+              <input style={{...inputStyle, gridColumn:'1 / -1'}} placeholder="Nombre *" value={clienteForm.nombre} onChange={e=>setClienteForm({...clienteForm, nombre:e.target.value})} required />
+              <input style={inputStyle} placeholder="Apellido" value={clienteForm.apellido} onChange={e=>setClienteForm({...clienteForm, apellido:e.target.value})} />
+              <input style={inputStyle} placeholder="DNI" value={clienteForm.dni} onChange={e=>setClienteForm({...clienteForm, dni:e.target.value})} />
+              <input style={{...inputStyle, gridColumn:'1 / -1'}} placeholder="Teléfono" value={clienteForm.telefono} onChange={e=>setClienteForm({...clienteForm, telefono:e.target.value})} />
+              <button type="submit" style={{...btnPrimary, gridColumn:'1 / -1'}}>CREAR CLIENTE</button>
+            </form>
+            <div style={chartCard}>{clientes.length===0 ? <div style={{color:C.textMut, textAlign:'center', padding:16, fontSize:12}}>Sin clientes - creá el primero arriba</div> : clientes.map(c=>(<div key={c.id} style={{display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:`1px solid ${C.border}`, fontSize:12}}><span><b style={{color:C.gold}}>{c.nombre} {c.apellido}</b> <span style={{color:C.textMut, fontSize:10}}>{c.dni||''}</span></span><div style={{display:'flex', gap:'6px'}}><button onClick={()=>cargarFicha(c.id)} style={{...btnGhost, padding:'6px 10px', fontSize:10}}>FICHA</button><button onClick={()=>eliminarCliente(c.id)} style={btnRed}>ELIMINAR</button></div></div>))}</div>
+          </div>
+        )}
+
+        {vista==='operaciones' && (
+          <div style={{display:'grid', gap:'10px'}}>
+            <form onSubmit={crearOperacion} style={{...chartCard, display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px'}}>
+              <select style={{...inputStyle, gridColumn:'1 / -1'}} value={opForm.cliente_id} onChange={e=>setOpForm({...opForm, cliente_id:e.target.value})} required><option value="">Seleccioná cliente</option>{clientes.map(c=><option key={c.id} value={c.id}>{c.nombre} {c.apellido}</option>)}</select>
+              <select style={inputStyle} value={opForm.tipo} onChange={e=>setOpForm({...opForm, tipo:e.target.value})}><option value="ingreso">INGRESO</option><option value="egreso">EGRESO</option></select>
+              <input style={inputStyle} type="number" placeholder="Monto" value={opForm.monto} onChange={e=>setOpForm({...opForm, monto:e.target.value})} required />
+              <select style={inputStyle} value={opForm.medio} onChange={e=>setOpForm({...opForm, medio:e.target.value})}><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="tarjeta">Tarjeta</option><option value="billetera">Billetera</option><option value="cheque">Cheque</option><option value="otro">Otro</option></select>
+              <input style={inputStyle} placeholder="Banco / billetera" value={opForm.banco} onChange={e=>setOpForm({...opForm, banco:e.target.value})} />
+              <select style={inputStyle} value={opForm.estado} onChange={e=>setOpForm({...opForm, estado:e.target.value})}><option value="confirmado">Confirmado</option><option value="pendiente">Pendiente</option><option value="anulado">Anulado</option></select>
+              <input style={{...inputStyle, gridColumn:'1 / -1'}} placeholder="Observaciones" value={opForm.observaciones} onChange={e=>setOpForm({...opForm, observaciones:e.target.value})} />
+              <input style={{...inputStyle, gridColumn:'1 / -1'}} placeholder="Comprobante / Nº" value={opForm.comprobante} onChange={e=>setOpForm({...opForm, comprobante:e.target.value})} />
+              <button type="submit" style={{...btnGold, gridColumn:'1 / -1'}}>CARGAR OPERACIÓN</button>
+            </form>
+            <div style={chartCard}>{operaciones.length===0 ? <div style={{color:C.textMut, textAlign:'center', padding:16, fontSize:12}}>Sin operaciones</div> : operaciones.map(o=>(<div key={o.id} style={{display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:`1px solid ${C.border}`, fontSize:11}}><span><b>{o.cliente_nombre||'CL-'+o.cliente_id}</b> • {o.tipo} • {o.medio || 'efectivo'} • {o.estado || 'confirmado'}</span><b style={{color:o.tipo==='ingreso'?C.green:C.red}}>${Number(o.monto).toLocaleString()}</b></div>))}</div>
+          </div>
+        )}
+
+        {vista==='cierres' && (
+          <div style={{display:'grid', gap:'10px'}}>
+            <div style={{...chartCard, display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px'}}><input style={inputStyle} type="number" placeholder="Arqueo Real" value={arqueo} onChange={e=>setArqueo(e.target.value)}/><input style={inputStyle} placeholder="Observaciones" value={obsCierre} onChange={e=>setObsCierre(e.target.value)}/><button onClick={hacerCierre} style={{...btnPrimary, gridColumn:'1 / -1'}}>CERRAR CAJA</button></div>
+            <div style={chartCard}>{cierres.length===0 ? <div style={{color:C.textMut, textAlign:'center', padding:16, fontSize:12}}>Sin cierres</div> : cierres.map(c=>(<div key={c.id} style={{padding:'8px 0', borderBottom:`1px solid ${C.border}`, fontSize:11}}>{new Date(c.fecha_cierre).toLocaleString()} • {c.estado} • Real: ${c.arqueo_real}</div>))}</div>
+          </div>
+        )}
+
+        {role === 'admin' && vista==='auditoria' && (
+          <div style={{display:'grid', gap:'10px'}}>
+            <div style={{...chartCard, display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px'}}>
+              <input type="date" style={inputStyle} value={filtroAud.desde} onChange={e=>setFiltroAud({...filtroAud, desde:e.target.value})}/>
+              <input type="date" style={inputStyle} value={filtroAud.hasta} onChange={e=>setFiltroAud({...filtroAud, hasta:e.target.value})}/>
+              <div style={{display:'flex', gap:'6px', gridColumn:'1 / -1'}}><button onClick={()=>{setFiltroAud({desde:'', hasta:''})}} style={{...btnGhost, flex:1}}>LIMPIAR</button><button onClick={exportarExcel} style={{...btnPrimary, flex:1, background:'#10B981'}}>EXCEL</button><button onClick={borrarAuditoria} style={{...btnRed, flex:1, padding:'11px'}}>BORRAR</button></div>
+            </div>
+            <div style={{...chartCard, maxHeight:'60vh', overflow:'auto'}}>{auditoria.length===0 ? <div style={{color:C.textMut, textAlign:'center', padding:16, fontSize:12}}>Sin registros</div> : auditoria.filter(a=>{ if(!filtroAud.desde && !filtroAud.hasta) return true; const d=new Date(a.fecha).toISOString().slice(0,10); if(filtroAud.desde && d < filtroAud.desde) return false; if(filtroAud.hasta && d > filtroAud.hasta) return false; return true; }).map(a=>(<div key={a.id} style={{padding:'7px 0', borderBottom:`1px solid ${C.border}`, fontSize:11}}>{new Date(a.fecha).toLocaleString()} | <b style={{color:C.purple}}>{a.username||a.usuario||'-'}</b> | {a.accion}</div>))}</div>
+          </div>
+        )}
+
+        {role === 'admin' && vista==='usuarios' && (
+          <div style={{display:'grid', gap:'10px'}}>
+            <form onSubmit={crearUsuario} style={{...chartCard, display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px'}}>
+              <input style={inputStyle} placeholder="usuario *" value={nuevoUsuario.username} onChange={e=>setNuevoUsuario({...nuevoUsuario, username:e.target.value})} required/>
+              <input style={inputStyle} placeholder="password *" type="password" value={nuevoUsuario.password} onChange={e=>setNuevoUsuario({...nuevoUsuario, password:e.target.value})} required/>
+              <input style={inputStyle} placeholder="Nombre" value={nuevoUsuario.nombre} onChange={e=>setNuevoUsuario({...nuevoUsuario, nombre:e.target.value})}/>
+              <select style={inputStyle} value={nuevoUsuario.rol} onChange={e=>setNuevoUsuario({...nuevoUsuario, rol:e.target.value})}><option value="cajero">cajero</option><option value="admin">admin</option></select>
+              <button type="submit" style={{...btnGold, gridColumn:'1 / -1'}}>CREAR USUARIO</button>
+            </form>
+            <div style={chartCard}>{users.length===0 ? <div style={{color:C.textMut, textAlign:'center', padding:16, fontSize:12}}>Sin usuarios</div> : users.map(u=>(<div key={u.id} style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom:`1px solid ${C.border}`, fontSize:12}}><span><b style={{color:C.gold}}>{u.username}</b> • {u.nombre||'-'} • <span style={{color:C.purple, fontSize:11}}>{u.rol}</span></span>{u.id!==1 && <button onClick={()=>eliminarUsuario(u.id)} style={btnRed}>ELIMINAR</button>}</div>))}</div>
+          </div>
+        )}
       </main>
-      {editCliente && (<div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:101, padding:'20px'}}><div style={{background:C.card, border:`1px solid ${C.border}`, borderRadius:'16px', width:'100%', maxWidth:'500px', padding:'20px'}}><h3 style={{color:C.gold, marginBottom:'12px'}}>Editar Cliente #{editCliente.id}</h3><form onSubmit={guardarEdicionCliente} style={{display:'grid', gap:'10px'}}><input style={inputStyle} placeholder="Nombre *" value={editCliente.nombre||''} onChange={e=>setEditCliente({...editCliente, nombre:e.target.value})} required/><input style={inputStyle} placeholder="Apellido" value={editCliente.apellido||''} onChange={e=>setEditCliente({...editCliente, apellido:e.target.value})}/><input style={inputStyle} placeholder="DNI" value={editCliente.dni||''} onChange={e=>setEditCliente({...editCliente, dni:e.target.value})}/><input style={inputStyle} placeholder="Telefono" value={editCliente.telefono||''} onChange={e=>setEditCliente({...editCliente, telefono:e.target.value})}/><input style={inputStyle} placeholder="Email" value={editCliente.email||''} onChange={e=>setEditCliente({...editCliente, email:e.target.value})}/><div style={{display:'flex', gap:'8px'}}><button type="submit" style={{...btnGold, flex:1}}>GUARDAR</button><button type="button" onClick={()=>setEditCliente(null)} style={{...btnGhost, flex:1}}>CANCELAR</button></div></form></div></div>)}
-      {ficha && (<div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, padding:'20px'}}><div style={{background:C.card, border:`1px solid ${C.border}`, borderRadius:'16px', width:'100%', maxWidth:'900px', maxHeight:'90vh', overflow:'auto', padding:'20px'}}><div style={{display:'flex', justifyContent:'space-between', marginBottom:'16px'}}><h2 style={{color:C.text, fontWeight:900}}>FICHA {ficha.cliente.nombre} {ficha.cliente.apellido}</h2><button onClick={()=>setFicha(null)} style={btnGhost}>X</button></div><div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'12px', marginBottom:'16px'}}><div style={kpiCard(C.gold)}><div style={kpiLabel}>SALDO ACTUAL</div><div style={{...kpiValue, color:ficha.saldo_actual>=0?C.green:C.red}}>${Number(ficha.saldo_actual).toLocaleString()}</div></div><div style={kpiCard(C.green)}><div style={kpiLabel}>INGRESOS</div><div style={{...kpiValue, color:C.green}}>${Number(ficha.totales.ingresos).toLocaleString()}</div></div><div style={kpiCard(C.red)}><div style={kpiLabel}>EGRESOS</div><div style={{...kpiValue, color:C.red}}>${Number(ficha.totales.egresos).toLocaleString()}</div></div></div>{ficha.historial.map(h=>(<div key={h.id} style={{...chartCard, marginBottom:'6px', borderLeft:`3px solid ${h.tipo==='ingreso'?C.green:C.red}`, display:'flex', justifyContent:'space-between'}}><span style={{fontSize:'12px'}}>{new Date(h.fecha).toLocaleString()} | {h.tipo} ${h.monto} | {h.metodo_pago} | {h.cajero} | {h.referencia}</span></div>))}</div></div>)}
-      {showPassModal && (<div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200}}><div style={{background:C.card, padding:'20px', borderRadius:'16px', width:'340px', border:`1px solid ${C.border}`}}><h3 style={{color:C.text, marginBottom:'12px'}}>Cambiar Contraseña</h3><input type="password" style={{...inputStyle, width:'100%', marginBottom:'10px'}} placeholder="Actual" value={passForm.actual} onChange={e=>setPassForm({...passForm, actual:e.target.value})}/><input type="password" style={{...inputStyle, width:'100%', marginBottom:'16px'}} placeholder="Nueva" value={passForm.nueva} onChange={e=>setPassForm({...passForm, nueva:e.target.value})}/><div style={{display:'flex', gap:'8px'}}><button onClick={cambiarPass} style={{...btnPrimary, flex:1}}>GUARDAR</button><button onClick={()=>setShowPassModal(false)} style={{...btnGhost, flex:1}}>CANCELAR</button></div></div></div>)}
     </div>
   );
 }
